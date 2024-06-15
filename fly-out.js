@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Fast-Flight Panel
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.5
 // @description  Creates a panel to help you fly out faster
 // @author       CrowleyJr
 // @match        www.torn.com/*
 // @icon         https://img.icons8.com/?size=100&id=60631&format=png&color=000000
 // @grant        none
-// @updateURL    https://github.com/gilrm92/torn-scripts-public/blob/master/fly-out.meta.js
-// @downloadURL  https://github.com/gilrm92/torn-scripts-public/blob/master/fly-out.js
+// @updateURL    https://raw.githubusercontent.com/gilrm92/torn-scripts-public/master/fly-out.meta.js
+// @downloadURL  https://raw.githubusercontent.com/gilrm92/torn-scripts-public/master/fly-out.js
 // ==/UserScript==
 
 (function() {

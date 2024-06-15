@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fast-Flight Panel
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.5
 // @description  Creates a panel to help you fly out faster
 // @author       CrowleyJr
 // @match        www.torn.com/*
