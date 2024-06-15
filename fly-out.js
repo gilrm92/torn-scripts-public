@@ -7,8 +7,8 @@
 // @match        www.torn.com/*
 // @icon         https://img.icons8.com/?size=100&id=60631&format=png&color=000000
 // @grant        none
-// @updateURL    https://gist.githubusercontent.com/gilrm92/6f2617c8f7c3065972bc9247bf386dce/raw/ceac527f529527dd4a6dbddb5ddae0d57c65e3ce/fly-out.js
-// @downloadURL  https://gist.githubusercontent.com/gilrm92/6f2617c8f7c3065972bc9247bf386dce/raw/ceac527f529527dd4a6dbddb5ddae0d57c65e3ce/fly-out.js
+// @updateURL    https://github.com/gilrm92/torn-scripts-public/blob/master/fly-out.meta.js
+// @downloadURL  https://github.com/gilrm92/torn-scripts-public/blob/master/fly-out.js
 // ==/UserScript==
 
 (function() {
