@@ -6,4 +6,5 @@
 // @author       CrowleyJr[2827691]
 // @match        https://www.torn.com/*
 // @grant        none
+// @icon         https://img.icons8.com/?size=100&id=sfCz8paHIqnu&format=png&color=000000
 // ==/UserScript==
