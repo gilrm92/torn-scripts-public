@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Torn Bazaar Auto Click
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      2.0
 // @description  Auto click script for Torn Bazaar page
 // @author       CrowleyJr[2827691]
 // @match        https://www.torn.com/bazaar.php*
 // @grant        none
 // @run-at       document-end
+// @updateURL    https://raw.githubusercontent.com/gilrm92/torn-scripts-public/master/auto-buy-bazaar.meta.js
+// @downloadURL  https://raw.githubusercontent.com/gilrm92/torn-scripts-public/master/auto-buy-bazaar.js
 // ==/UserScript==
 
 (function() {
