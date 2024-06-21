@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Poker Mugger
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  Helps you to keep eye on your poker target
 // @author       CrowleyJr[2827691]
 // @match        https://www.torn.com/page.php?sid=holdem
@@ -9,6 +9,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      data.mongodb-api.com
 // @connect      api.torn.com
+// @updateURL    https://raw.githubusercontent.com/gilrm92/torn-scripts-public/master/poker-mug.meta.js
+// @downloadURL  https://raw.githubusercontent.com/gilrm92/torn-scripts-public/master/poker-mug.js
 // ==/UserScript==
 
 (function() {
