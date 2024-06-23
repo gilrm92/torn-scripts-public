@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Poker Mugger
 // @namespace    http://tampermonkey.net/
-// @version      2.5
+// @version      2.6
 // @description  Helps you to keep eye on your poker target
 // @author       CrowleyJr[2827691]
 // @match        https://www.torn.com/page.php?sid=holdem
