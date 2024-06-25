@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Auto Click
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.2
 // @description  Auto click script for Torn Bazaar page
 // @author       CrowleyJr[2827691]
 // @match        https://www.torn.com/bazaar.php*

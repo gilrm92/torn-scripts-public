@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Auto Click
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.2
 // @description  Auto click script for Torn Bazaar page
 // @author       CrowleyJr[2827691]
 // @match        https://www.torn.com/bazaar.php*
@@ -13,51 +13,79 @@
 // ==/UserScript==
 
 (function() {
-    'use strict';
-    var checkInterval2 = null;
-    var checkInterval3 = null;
-
-    // Function to handle the click event on controlPanelButton
-    function handleControlPanelButtonClick() {
-       checkInterval2  = setInterval(checkForbuyOptions, 500);
+     // Function to clone and dispatch regular DOM events
+    function cloneAndDispatchEvents(sourceElement) {
+        const allEvents = ['click', 'mouseover', 'mousedown', 'mouseup', 'focus', 'blur', 'input', 'change'];
+        allEvents.forEach((eventName) => {
+            const event = new Event(eventName, { bubbles: true, cancelable: true });
+            sourceElement.dispatchEvent(event);
+        });
     }
 
-    function skipConfirmation() {
-        checkInterval3 = setInterval(checkForYesButton, 500)
-
-    }
-    function checkForYesButton() {
-        if ($('button[aria-label="Yes"]').length > 0) {
-            $('button[aria-label="Yes"]').click();
-
-            clearInterval(checkInterval3);
+    // Function to extract and trigger the React event handlers of an element
+    function triggerReactEventHandlers(element) {
+        const handlerKey = Object.keys(element).find(key => key.startsWith('__reactEventHandlers'));
+        if (handlerKey) {
+            const eventHandlers = element[handlerKey];
+            for (const [event, handler] of Object.entries(eventHandlers)) {
+                const eventName = event.slice(2).toLowerCase();
+                const eventObj = new Event(eventName, { bubbles: true, cancelable: true });
+                element.dispatchEvent(eventObj);
+            }
+            console.log('React event handlers successfully triggered on the target element:', element);
+        } else {
+            console.log('No React event handlers found on the target element:', element);
         }
     }
 
-    function checkForReactVirtualizedDiv() {
-        if ($('div[class*="ReactVirtualized"]').length > 0) {
-
-            // Add click event to all existing buttons with class containing "controlPanelButton"
-           $('button[aria-label*="Buy:"]').click(handleControlPanelButtonClick);
-
-           clearInterval(checkInterval); // Stop the interval once the element is found and the handlers are added
-        }
+    // Function to wait for the "Yes" button to appear and then trigger its event handlers
+    function waitForYesButtonAndTrigger() {
+        const checkInterval = setInterval(() => {
+            const yesButton = document.querySelector('button.button___g7ktb[aria-label="Yes"]');
+            if (yesButton) {
+                console.log('"Yes" button found:', yesButton);
+                triggerReactEventHandlers(yesButton);
+                clearInterval(checkInterval); // Stop checking once the target element is found and triggered
+            }
+        }, 20); // Check every second
     }
 
-    function checkForbuyOptions() {
-    if ($('span[class*="tt-max-buy"]').length > 0) {
-
-            // Add click event to all existing buttons with class containing "controlPanelButton"
-           $('span[class*="tt-max-buy"]').click();
-           $('button[class*="buy"]').click(skipConfirmation);
-
-           clearInterval(checkInterval2); // Stop the interval once the element is found and the handlers are added
+    // Function to handle a new "Buy" button
+    function handleBuyButton(buyButton) {
+        // Dispatch events on the span with class tt-max-buy
+        const maxBuySpan = document.querySelector('span.tt-max-buy');
+        if (maxBuySpan) {
+            cloneAndDispatchEvents(maxBuySpan);
+            console.log('Events successfully dispatched on the tt-max-buy span:', maxBuySpan);
+        } else {
+            console.log('tt-max-buy span not found.');
         }
+
+        // Add a click event listener to the "Buy" button
+        buyButton.addEventListener('click', () => {
+            console.log('"Buy" button clicked:', buyButton);
+            waitForYesButtonAndTrigger();
+            console.log('Waiting for the "Yes" button to appear...');
+        });
+        console.log('Click listener added to the "Buy" button:', buyButton);
     }
 
-    // Set an interval to check for the ReactVirtualized div every 500 milliseconds
-    const checkInterval = setInterval(checkForReactVirtualizedDiv, 500);
+    // Function to continuously check for "Buy" buttons and handle them
+    function continuouslyCheckForBuyButtons() {
+        const handledButtons = new Set();
+        setInterval(() => {
+            document.querySelectorAll('button').forEach((buyButton) => {
+                if (buyButton.className.split(' ').some(cls => cls.startsWith('buy__')) && !handledButtons.has(buyButton)) {
+                    console.log('New or existing "Buy" button found:', buyButton);
+                    handleBuyButton(buyButton);
+                    handledButtons.add(buyButton);
+                }
+            });
+        }, 20); // Check every second
+    }
 
-    // Initial check in case the element is already present
-    checkForReactVirtualizedDiv();
+    // Start continuously checking for "Buy" buttons
+    continuouslyCheckForBuyButtons();
+    console.log('Continuously checking for "Buy" buttons to appear...');
+	
 })();
