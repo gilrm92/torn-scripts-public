@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fast-Flight Panel
 // @namespace    http://tampermonkey.net/
-// @version      0.8
+// @version      0.9
 // @description  Creates a panel to help you fly out faster
 // @author       CrowleyJr
 // @match        www.torn.com/*
@@ -124,7 +124,9 @@
                 <option value="Mexico">Mexico</option>
             </select>
             <br>
-            <button id="flyoutButton" style="width: 100%; padding: 10px; background-color: gray; color: white; border: none; border-radius: 5px; cursor: not-allowed;" disabled>Fly out!</button>
+            <button id="flyAgency" style="width: 100%; padding: 10px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">Flying Agency</button>
+			<br />
+			<button id="flyoutButton" style="width: 100%; padding: 10px; background-color: gray; color: white; border: none; border-radius: 5px; cursor: not-allowed;" disabled>Fly out!</button>
         </div>
     `;
 
@@ -132,12 +134,14 @@
     document.body.appendChild(toggleButton);
     document.body.appendChild(floatingPanel);
     var flyoutButton = document.getElementById('flyoutButton');
-
+	var flyAgency = document.getElementById('flyAgency');
+	
     // Enable the "Fly out" button if the URL contains "travelagency.php"
     if (window.location.href.includes('travelagency.php')) {
         flyoutButton.removeAttribute('disabled');
         flyoutButton.style.backgroundColor = '#4CAF50';
         flyoutButton.style.cursor = 'pointer';
+		flyAgency.style.display = 'none';
     }
 
     // Function to toggle the panel and set a cookie
@@ -175,7 +179,11 @@
         });
         element.dispatchEvent(event);
     }
-
+	
+	flyAgency.addEventListener('click', function() {
+		window.location.href = 'travelagency.php'
+	});
+	
     // Add click event listener to the "Fly out!" button
     flyoutButton.addEventListener('click', function() {
         // Check if the button is disabled
