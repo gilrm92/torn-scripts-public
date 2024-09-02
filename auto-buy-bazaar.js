@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Auto Click
 // @namespace    http://tampermonkey.net/
-// @version      2.2
+// @version      2.3
 // @description  Auto click script for Torn Bazaar page
 // @author       CrowleyJr[2827691]
 // @match        https://www.torn.com/bazaar.php*
@@ -24,14 +24,16 @@
 
     // Function to extract and trigger the React event handlers of an element
     function triggerReactEventHandlers(element) {
-        const handlerKey = Object.keys(element).find(key => key.startsWith('__reactEventHandlers'));
+        const handlerKey = Object.keys(element).find(key => key.startsWith('__reactProps'));
         if (handlerKey) {
             const eventHandlers = element[handlerKey];
-            for (const [event, handler] of Object.entries(eventHandlers)) {
-                const eventName = event.slice(2).toLowerCase();
-                const eventObj = new Event(eventName, { bubbles: true, cancelable: true });
-                element.dispatchEvent(eventObj);
-            }
+            eventHandlers.onClick();
+
+            // for (const [event, handler] of Object.entries(eventHandlers)) {
+            //     const eventName = event.slice(2).toLowerCase();
+            //     const eventObj = new Event(eventName, { bubbles: true, cancelable: true });
+            //     element.dispatchEvent(eventObj);
+            // }
             console.log('React event handlers successfully triggered on the target element:', element);
         } else {
             console.log('No React event handlers found on the target element:', element);
