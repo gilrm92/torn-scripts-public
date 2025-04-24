@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Panel - Central
 // @namespace    crowley.scripts
-// @version      1.2
+// @version      1.3
 // @description  Create a War Panel for Torn.com
 // @author       Crowley
 // @match        https://www.torn.com/*
@@ -1207,6 +1207,36 @@
             return sortStates[tabName];
         }
         return { column: 0, ascending: true }; // Default sort
+    }
+
+    // Add helper function to parse BSP values
+    function parseBSPValue(bsp) {
+        if (!bsp || bsp === '-') return 0;
+        
+        // Remove any whitespace and convert to lowercase
+        bsp = bsp.trim().toLowerCase();
+        
+        // Extract the numeric part
+        const match = bsp.match(/^([\d.]+)([kmb])?$/);
+        if (!match) return 0;
+        
+        let value = parseFloat(match[1]);
+        const suffix = match[2];
+        
+        // Apply multiplier based on suffix
+        switch(suffix) {
+            case 'k':
+                value *= 1000;
+                break;
+            case 'm':
+                value *= 1000000;
+                break;
+            case 'b':
+                value *= 1000000000;
+                break;
+        }
+        
+        return value;
     }
 
     // Update sortTable function to handle both tabs
