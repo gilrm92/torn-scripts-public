@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Panel - Central
 // @namespace    crowley.scripts
-// @version      1.3
+// @version      1.4
 // @description  Create a War Panel for Torn.com
 // @author       Crowley
 // @match        https://www.torn.com/*
@@ -440,6 +440,10 @@
             font-size: 16px;
             z-index: 1001;
         }
+
+        #personal-details-tab .xpt-table th, #personal-details-tab .xpt-table td {
+            text-align: center;
+        }
     `;
 
     // Add these variables at the top of the file, after the styles
@@ -502,6 +506,7 @@
                 <div class="panel-tabs">
                     <div class="tab active" data-tab="all-members">All Members</div>
                     <div class="tab" data-tab="abroad-members">Display only Abroad</div>
+                    <div class="tab" data-tab="personal-details">Member Personal Details</div>
                 </div>
 
                 <div class="panel-content">
@@ -514,6 +519,7 @@
                                 <option value="5">Every 5 seconds</option>
                                 <option value="10">Every 10 seconds</option>
                                 <option value="15">Every 15 seconds</option>
+                                <option value="batch5-8">5 every 8 seconds</option>
                             </select>
                         </div>
                         <div class="table-container">
@@ -522,13 +528,11 @@
                                     <tr>
                                         <th></th>
                                         <th>Member</th>
-                                        <th>State</th>
                                         <th>Description</th>
                                         <th>Time</th>
                                         <th>Level</th>
                                         <th>Yata BS</th>
                                         <th>BSP</th>
-                                        <th>Life</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -555,17 +559,37 @@
                                     <tr>
                                         <th></th>
                                         <th>Member</th>
-                                        <th>State</th>
                                         <th>Description</th>
                                         <th>Time</th>
                                         <th>Level</th>
                                         <th>Yata BS</th>
                                         <th>BSP</th>
-                                        <th>Life</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <!-- Abroad members list will be populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="personal-details-tab" class="tab-content">
+                        <div class="table-controls">
+                            <button class="refresh-button" id="get-user-details">Get User Details</button>
+                            <button class="refresh-button" id="export-excel">Export to Excel</button>
+                        </div>
+                        <div class="table-container">
+                            <table class="xpt-table">
+                                <thead>
+                                    <tr>
+                                        <th>Member</th>
+                                        <th>Ranked War Hits</th>
+                                        <th>Xanax</th>
+                                        <th>Activity Streak</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Personal details will be populated dynamically -->
                                 </tbody>
                             </table>
                         </div>
@@ -663,6 +687,8 @@
             // Update both tables
             updateTableContent('#all-members-tab .xpt-table tbody', validMembers);
             updateTableContent('#abroad-members-tab .xpt-table tbody', abroadMembers);
+            // Update the personal details table
+            updatePersonalDetailsTable(validMembers);
 
             // Setup table header click handlers if not already set
             setupTableHeaders();
@@ -684,13 +710,7 @@
         members.forEach((member, index) => {
             try {
                 const memberStatus = member.status || {};
-                const memberState = memberStatus.state || 'Unknown';
-                const statusClass = getStatusClass(memberState);
                 const statusIcon = getStatusIcon(member.lastAction || {});
-                const lifeBar = createLifeBar(
-                    member.life?.current || 0,
-                    member.life?.maximum || 0
-                );
                 
                 const countdownId = `countdown-${member.id || `unknown-${index}`}`;
                 
@@ -703,19 +723,17 @@
                         <td class="member-name">
                             <a href="https://www.torn.com/profiles.php?XID=${member.id}" target="_blank">${member.name || 'Unknown'}</a>
                         </td>
-                        <td class="${statusClass}">${memberState}</td>
                         <td>${memberStatus.description || '-'}</td>
                         <td id="${countdownId}">${formatTimeRemaining(memberStatus.until)}</td>
                         <td>${member.level || 0}</td>
                         <td>${formatBSValue(member.yataBS)}</td>
                         <td>${member.bsp || '-'}</td>
-                        <td>${lifeBar}</td>
                     </tr>
                 `;
                 tbody.append(row);
 
                 // Start countdown if member is in hospital
-                if (memberState === 'Hospital' && memberStatus.until) {
+                if (memberStatus.state === 'Hospital' && memberStatus.until) {
                     startCountdown(countdownId, memberStatus.until);
                 }
             } catch (memberError) {
@@ -844,6 +862,66 @@
                 clearInterval(autoRefreshIntervalAbroad);
                 autoRefreshIntervalAbroad = setInterval(refreshMembersData, $(this).val() * 1000);
             }
+        });
+
+        // Add event listener for Export to Excel
+        $('#export-excel').off('click').on('click', function() {
+            const savedMembers = localStorage.getItem('tornWarPanelMembers');
+            if (!savedMembers) {
+                showNotification('No member data to export', 'error');
+                return;
+            }
+            const members = JSON.parse(savedMembers);
+            // Prepare CSV content
+            let csv = 'Member Name,Ranked War Hits,Xanax,Activity Streak\n';
+            members.forEach(member => {
+                const name = member.name ? '"' + member.name.replace(/"/g, '""') + '"' : '';
+                const hits = member.ranked_war_hits !== undefined ? member.ranked_war_hits : '';
+                const xanax = member.xanax !== undefined ? member.xanax : '';
+                const streak = member.activity_streak !== undefined ? member.activity_streak : '';
+                csv += `${name},${hits},${xanax},${streak}\n`;
+            });
+            // Create a blob and trigger download
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'member_personal_details.csv';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+            showNotification('Exported to Excel (CSV)');
+        });
+
+        // Get User Details button
+        $('#get-user-details').off('click').on('click', async function() {
+            const button = $(this);
+            const apiKey = getApiKey();
+            if (!apiKey) {
+                showNotification('Please enter a valid API key', 'error');
+                return;
+            }
+            button.prop('disabled', true);
+            let lastProgress = '';
+            showPersistentNotification('Fetching user details for all members. Please do not reload the page.');
+            try {
+                await updateAllMembersPersonalStatsBatchSequential(apiKey, (current, total) => {
+                    const progressMsg = `Fetching user details for all members. Please do not reload the page.\nUpdating ${current} of ${total} members...`;
+                    if (progressMsg !== lastProgress) {
+                        showPersistentNotification(progressMsg);
+                        lastProgress = progressMsg;
+                    }
+                }, 5, 8000);
+                showPersistentNotification('All user details updated!', 'persistent-notification', 'success');
+                setTimeout(() => removePersistentNotification(), 2500);
+            } catch (err) {
+                showPersistentNotification('Error updating user details', 'persistent-notification', 'error');
+                setTimeout(() => removePersistentNotification(), 3500);
+            }
+            button.prop('disabled', false);
         });
     }
 
@@ -1058,7 +1136,7 @@
             throw new Error('Invalid members data received from API');
         }
 
-        // Get existing members to preserve Yata BS and BSP values
+        // Get existing members to preserve Yata BS, BSP, and custom fields
         const existingMembers = JSON.parse(localStorage.getItem('tornWarPanelMembers') || '[]');
         const existingMembersMap = new Map(existingMembers.map(m => [m.id, m]));
 
@@ -1081,13 +1159,14 @@
                     description: member.status?.description || '-',
                     until: member.status?.until || 0
                 },
+                // life removed from display, but can be kept if needed elsewhere
                 life: {
                     current: member.life?.current || 0,
                     maximum: member.life?.maximum || 0
                 }
             };
 
-            // Preserve existing Yata BS and BSP values if they exist
+            // Preserve existing Yata BS, BSP, and custom fields if they exist
             const existingMember = existingMembersMap.get(processedMember.id);
             if (existingMember) {
                 if (existingMember.yataBS) {
@@ -1095,6 +1174,16 @@
                 }
                 if (existingMember.bsp) {
                     processedMember.bsp = existingMember.bsp;
+                }
+                // Preserve custom fields
+                if (existingMember.ranked_war_hits !== undefined) {
+                    processedMember.ranked_war_hits = existingMember.ranked_war_hits;
+                }
+                if (existingMember.xanax !== undefined) {
+                    processedMember.xanax = existingMember.xanax;
+                }
+                if (existingMember.activity_streak !== undefined) {
+                    processedMember.activity_streak = existingMember.activity_streak;
                 }
             }
             
@@ -1280,33 +1369,25 @@
                         aValue = (a?.name || '').toLowerCase();
                         bValue = (b?.name || '').toLowerCase();
                         break;
-                    case 2: // Status
-                        aValue = getStatePriority(a?.status?.state || '');
-                        bValue = getStatePriority(b?.status?.state || '');
-                        break;
-                    case 3: // Description
+                    case 2: // Description
                         aValue = (a?.status?.description || '').toLowerCase();
                         bValue = (b?.status?.description || '').toLowerCase();
                         break;
-                    case 4: // Time
+                    case 3: // Time
                         aValue = a?.status?.until || 0;
                         bValue = b?.status?.until || 0;
                         break;
-                    case 5: // Level
+                    case 4: // Level
                         aValue = parseInt(a?.level || 0);
                         bValue = parseInt(b?.level || 0);
                         break;
-                    case 6: // BS
+                    case 5: // BS
                         aValue = parseInt(a?.yataBS || 0);
                         bValue = parseInt(b?.yataBS || 0);
                         break;
-                    case 7: // BSP
+                    case 6: // BSP
                         aValue = parseBSPValue(a?.bsp);
                         bValue = parseBSPValue(b?.bsp);
-                        break;
-                    case 8: // Life
-                        aValue = parseInt(a?.life?.current || 0);
-                        bValue = parseInt(b?.life?.current || 0);
                         break;
                     default:
                         return 0;
@@ -1340,17 +1421,6 @@
             '⚪': 1  // Offline
         };
         return priorities[status] || 0;
-    }
-
-    // Helper function to get state priority
-    function getStatePriority(state) {
-        const priorities = {
-            'Hospital': 4,
-            'Traveling': 3,
-            'Abroad': 2,
-            'Okay': 1
-        };
-        return priorities[state] || 0;
     }
 
     // Add countdown functionality
@@ -1460,33 +1530,25 @@
                             aValue = (a?.name || '').toLowerCase();
                             bValue = (b?.name || '').toLowerCase();
                             break;
-                        case 2: // Status
-                            aValue = getStatePriority(a?.status?.state || '');
-                            bValue = getStatePriority(b?.status?.state || '');
-                            break;
-                        case 3: // Description
+                        case 2: // Description
                             aValue = (a?.status?.description || '').toLowerCase();
                             bValue = (b?.status?.description || '').toLowerCase();
                             break;
-                        case 4: // Time
+                        case 3: // Time
                             aValue = a?.status?.until || 0;
                             bValue = b?.status?.until || 0;
                             break;
-                        case 5: // Level
+                        case 4: // Level
                             aValue = parseInt(a?.level || 0);
                             bValue = parseInt(b?.level || 0);
                             break;
-                        case 6: // BS
+                        case 5: // BS
                             aValue = parseInt(a?.yataBS || 0);
                             bValue = parseInt(b?.yataBS || 0);
                             break;
-                        case 7: // BSP
+                        case 6: // BSP
                             aValue = parseBSPValue(a?.bsp);
                             bValue = parseBSPValue(b?.bsp);
-                            break;
-                        case 8: // Life
-                            aValue = parseInt(a?.life?.current || 0);
-                            bValue = parseInt(b?.life?.current || 0);
                             break;
                         default:
                             return 0;
@@ -1573,13 +1635,21 @@
     // Update function to fetch Yata BS value using GM_xmlhttpRequest
     function fetchYataBS(targetId, apiKey) {
         return new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
+            console.log(`Fetching Yata BS for target ${targetId}`);
+            GM_xmlhttpRequest({
                 method: 'GET',
                 url: `https://yata.yt/api/v1/bs/${targetId}?key=${apiKey}`,
-                    onload: function(response) {
+                onload: function(response) {
                     try {
+                        console.log(`Response for target ${targetId}:`, response.responseText);
                         const data = JSON.parse(response.responseText);
-                        resolve(data[targetId]?.total || null);
+                        if (data[targetId]?.total) {
+                            console.log(`Successfully fetched Yata BS for target ${targetId}`);
+                            resolve(data[targetId].total);
+                        } else {
+                            console.error(`No Yata BS found for target ${targetId}`);
+                            resolve(null);
+                        }
                     } catch (error) {
                         console.error(`Error parsing Yata BS response for target ${targetId}:`, error);
                         resolve(null);
@@ -1670,6 +1740,119 @@
         }
     }
 
+    // Add or update a persistent notification
+    function showPersistentNotification(message, id = 'persistent-notification', type = 'info') {
+        let notification = document.getElementById(id);
+        if (!notification) {
+            notification = document.createElement('div');
+            notification.id = id;
+            notification.className = `notification ${type}`;
+            notification.style.position = 'fixed';
+            notification.style.top = '10px';
+            notification.style.left = '50%';
+            notification.style.transform = 'translateX(-50%)';
+            notification.style.zIndex = 2000;
+            notification.style.padding = '12px 24px';
+            notification.style.background = type === 'error' ? '#f44336' : (type === 'success' ? '#4CAF50' : '#333');
+            notification.style.color = '#fff';
+            notification.style.borderRadius = '5px';
+            notification.style.fontSize = '16px';
+            notification.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+            document.body.appendChild(notification);
+        }
+        notification.textContent = message;
+        notification.style.display = 'block';
+    }
+
+    function removePersistentNotification(id = 'persistent-notification') {
+        const notification = document.getElementById(id);
+        if (notification) {
+            notification.style.display = 'none';
+        }
+    }
+
+    // Fetches personal stats for a user and stores them in tornWarPanelMembers in localStorage (no timeout)
+    function fetchAndStoreUserPersonalStats(apiKey, userId) {
+        return new Promise((resolve, reject) => {
+            console.log(`Fetching stats for user ${userId}`);
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: `https://api.torn.com/v2/user/${userId}/personalstats?stat=xantaken,activestreak,rankedwarhits&key=${apiKey}`,
+                onload: function(response) {
+                    try {
+                        console.log(`Response for user ${userId}:`, response.responseText);
+                        const data = JSON.parse(response.responseText);
+                        if (data.error) {
+                            console.error(`API error for user ${userId}:`, data.error);
+                            reject(new Error(data.error.error || 'Failed to fetch user personal stats'));
+                            return;
+                        }
+                        // Extract the required fields from the new structure
+                        const stats = {
+                            ranked_war_hits: data.personalstats?.attacking?.faction?.ranked_war_hits ?? null,
+                            xanax: data.personalstats?.drugs?.xanax ?? null,
+                            activity_streak: data.personalstats?.other?.activity?.streak?.current ?? null
+                        };
+                        // Update the member in tornWarPanelMembers
+                        const membersKey = 'tornWarPanelMembers';
+                        const savedMembers = localStorage.getItem(membersKey);
+                        let members = [];
+                        if (savedMembers) {
+                            members = JSON.parse(savedMembers);
+                        }
+                        const idx = members.findIndex(m => m.id === userId);
+                        if (idx !== -1) {
+                            members[idx] = { ...members[idx], ...stats };
+                            localStorage.setItem(membersKey, JSON.stringify(members));
+                        }
+                        console.log(`Successfully updated user ${userId}`);
+                        resolve(members[idx]);
+                    } catch (error) {
+                        console.error(`Parse error for user ${userId}:`, error);
+                        reject(new Error('Failed to parse API response'));
+                    }
+                },
+                onerror: function(error) {
+                    console.error(`Network error for user ${userId}:`, error);
+                    reject(new Error('Network error occurred'));
+                }
+            });
+        });
+    }
+
+    // Batch update all faction members' personal stats, one at a time, with progress and robust error handling
+    async function updateAllMembersPersonalStatsBatchSequential(apiKey, onProgress, batchSize, batchDelay) {
+        const savedMembers = localStorage.getItem('tornWarPanelMembers');
+        if (!savedMembers) return;
+        const members = JSON.parse(savedMembers);
+        const userIds = members.map(m => m.id).filter(Boolean);
+
+        let updated = 0;
+        let hadError = false;
+        for (let i = 0; i < userIds.length; i += batchSize) {
+            for (let j = i; j < i + batchSize && j < userIds.length; j++) {
+                try {
+                    await fetchAndStoreUserPersonalStats(apiKey, userIds[j]);
+                } catch (err) {
+                    hadError = true;
+                    console.error(`Error updating user ${userIds[j]}:`, err);
+                }
+                updated++;
+                if (onProgress) {
+                    try { onProgress(updated, userIds.length); } catch (e) { console.error('onProgress error', e); }
+                }
+            }
+            if (i + batchSize < userIds.length) {
+                await sleep(batchDelay);
+            }
+        }
+        if (hadError) {
+            showPersistentNotification('Some user details could not be updated. Check console for errors.', 'persistent-notification', 'error');
+            setTimeout(() => removePersistentNotification(), 4000);
+        }
+        console.log('All member stats updated (batch sequential mode).');
+    }
+
     // Initialize the panel
     function init() {
         addStyles();
@@ -1700,4 +1883,27 @@
 
     // Run the script when the page is loaded
     $(document).ready(setTimeout(init, 2000));
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Add a function to update the personal details table
+    function updatePersonalDetailsTable(members) {
+        const tbody = $('#personal-details-tab .xpt-table tbody');
+        tbody.empty();
+        members.forEach(member => {
+            const row = `
+                <tr>
+                    <td class="member-name">
+                        <a href="https://www.torn.com/profiles.php?XID=${member.id}" target="_blank">${member.name || 'Unknown'}</a>
+                    </td>
+                    <td>${member.ranked_war_hits !== undefined ? member.ranked_war_hits : '-'}</td>
+                    <td>${member.xanax !== undefined ? member.xanax : '-'}</td>
+                    <td>${member.activity_streak !== undefined ? member.activity_streak : '-'}</td>
+                </tr>
+            `;
+            tbody.append(row);
+        });
+    }
 })(jQuery);
