@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Panel - Central
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  Create a War Panel for Assist Requests on Torn.com
 // @author       Your Name
 // @match        https://www.torn.com/*

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Panel - Central
 // @namespace    crowley.scripts
-// @version      2.0
+// @version      2.1
 // @description  Create a War Panel for Torn.com
 // @author       Crowley
 // @match        https://www.torn.com/*
@@ -452,7 +452,7 @@
     let autoRefreshIntervalAbroad = null;
 
     // API Configuration
-    const API_BASE_URL = 'https://torn-db-api-app-f59ca5466932.herokuapp.com/'; // Change to production URL when deployed
+    const API_BASE_URL = 'https://torn-db-api-app-f59ca5466932.herokuapp.com'; // Change to production URL when deployed
     const API_ENDPOINTS = {
         login: `${API_BASE_URL}/api/auth/login`,
         getUserBsp: (userId) => `${API_BASE_URL}/api/UserBsp/user/${userId}`,
