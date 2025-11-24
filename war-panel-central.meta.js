@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         War Panel - Central
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      2.0
 // @description  Create a War Panel for Assist Requests on Torn.com
 // @author       Your Name
 // @match        https://www.torn.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      api.torn.com
 // @connect      yata.yt
+// @connect      torn-db-api-app-f59ca5466932.herokuapp.com
 // @require      https://code.jquery.com/jquery-3.6.0.min.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js
 // ==/UserScript==

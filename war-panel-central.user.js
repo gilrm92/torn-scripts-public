@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         War Panel - Central
 // @namespace    crowley.scripts
-// @version      1.4
+// @version      2.0
 // @description  Create a War Panel for Torn.com
 // @author       Crowley
 // @match        https://www.torn.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      api.torn.com
 // @connect      yata.yt
+// @connect      torn-db-api-app-f59ca5466932.herokuapp.com
 // @require      https://code.jquery.com/jquery-3.6.0.min.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js
 // @updateURL    https://raw.githubusercontent.com/gilrm92/torn-scripts-public/master/war-panel-central.meta.js
@@ -391,21 +392,21 @@
             position: relative;
             padding-right: 20px;
         }
-        
+
         .xpt-table th.sort-asc::after {
             content: '▲';
             position: absolute;
             right: 5px;
             color: #4CAF50;
         }
-        
+
         .xpt-table th.sort-desc::after {
             content: '▼';
             position: absolute;
             right: 5px;
             color: #4CAF50;
         }
-        
+
         .xpt-table th:hover {
             background-color: #2a2a2a;
         }
@@ -415,7 +416,7 @@
             pointer-events: none;
             opacity: 0.7;
         }
-        
+
         .table-loading::after {
             content: '';
             position: absolute;
@@ -429,7 +430,7 @@
             justify-content: center;
             z-index: 1000;
         }
-        
+
         .table-loading::before {
             content: 'Loading...';
             position: absolute;
@@ -450,31 +451,317 @@
     let autoRefreshInterval = null;
     let autoRefreshIntervalAbroad = null;
 
+    // API Configuration
+    const API_BASE_URL = 'https://torn-db-api-app-f59ca5466932.herokuapp.com/'; // Change to production URL when deployed
+    const API_ENDPOINTS = {
+        login: `${API_BASE_URL}/api/auth/login`,
+        getUserBsp: (userId) => `${API_BASE_URL}/api/UserBsp/user/${userId}`,
+        getBspByFaction: (factionId) => `${API_BASE_URL}/api/UserBsp/faction/${factionId}`,
+        createUserBsp: `${API_BASE_URL}/api/UserBsp`,
+        updateUserBsp: (userId) => `${API_BASE_URL}/api/UserBsp/${userId}`
+    };
+
+    // Authentication Token Management
+    function saveAuthToken(token, expiresAt) {
+        const authData = {
+            token: token,
+            expiresAt: new Date(expiresAt).getTime() // Store as timestamp
+        };
+        localStorage.setItem('tornWarPanelAuthToken', JSON.stringify(authData));
+    }
+
+    function getAuthToken() {
+        const authData = localStorage.getItem('tornWarPanelAuthToken');
+        if (!authData) return null;
+
+        const data = JSON.parse(authData);
+        const now = Date.now();
+
+        // Check if token is expired (with 5 minute buffer)
+        if (now >= data.expiresAt - (5 * 60 * 1000)) {
+            localStorage.removeItem('tornWarPanelAuthToken');
+            return null;
+        }
+
+        return data.token;
+    }
+
+    function isTokenValid() {
+        const token = getAuthToken();
+        return token !== null;
+    }
+
+    // Authenticate with API using Torn API key
+    async function authenticate(apiKey) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: API_ENDPOINTS.login,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                data: JSON.stringify({ apiKey: apiKey }),
+                onload: function(response) {
+                    try {
+                        if (response.status === 200) {
+                            const data = JSON.parse(response.responseText);
+                            saveAuthToken(data.token, data.expiresAt);
+                            resolve(data.token);
+                        } else {
+                            const error = JSON.parse(response.responseText);
+                            reject(new Error(error.message || 'Authentication failed'));
+                        }
+                    } catch (error) {
+                        reject(new Error('Failed to parse authentication response'));
+                    }
+                },
+                onerror: function(error) {
+                    reject(new Error('Network error during authentication'));
+                }
+            });
+        });
+    }
+
+    // Ensure authentication is valid, refresh if needed
+    async function ensureAuthenticated() {
+        if (isTokenValid()) {
+            return getAuthToken();
+        }
+
+        // Token expired or missing, re-authenticate
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            throw new Error('API key not found. Please enter your Torn API key.');
+        }
+
+        try {
+            const token = await authenticate(apiKey);
+            showNotification('Re-authenticated successfully');
+            return token;
+        } catch (error) {
+            showNotification(`Authentication failed: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+
+    // Save BSP to API (creates or updates)
+    async function saveBSPToAPI(userId, factionId, bsp) {
+        const token = await ensureAuthenticated();
+
+        return new Promise((resolve, reject) => {
+            // First try to get existing BSP to determine if we should POST or PUT
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: API_ENDPOINTS.getUserBsp(userId),
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                onload: function(getResponse) {
+                    const method = getResponse.status === 200 ? 'PUT' : 'POST';
+                    const url = method === 'PUT'
+                        ? API_ENDPOINTS.updateUserBsp(userId)
+                        : API_ENDPOINTS.createUserBsp;
+
+                    const body = method === 'PUT'
+                        ? { factionId: factionId, bsp: bsp }
+                        : { userId: userId, factionId: factionId, bsp: bsp };
+
+                    GM_xmlhttpRequest({
+                        method: method,
+                        url: url,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        data: JSON.stringify(body),
+                        onload: function(response) {
+                            if (response.status === 200 || response.status === 201) {
+                                resolve(JSON.parse(response.responseText));
+                            } else {
+                                // If 401, token might be expired, try to re-authenticate once
+                                if (response.status === 401) {
+                                    ensureAuthenticated().then(newToken => {
+                                        // Retry with new token
+                                        saveBSPToAPI(userId, factionId, bsp).then(resolve).catch(reject);
+                                    }).catch(reject);
+                                } else {
+                                    try {
+                                        const error = JSON.parse(response.responseText);
+                                        reject(new Error(error.message || 'Failed to save BSP'));
+                                    } catch (e) {
+                                        reject(new Error('Failed to save BSP'));
+                                    }
+                                }
+                            }
+                        },
+                        onerror: function(error) {
+                            reject(new Error('Network error saving BSP'));
+                        }
+                    });
+                },
+                onerror: function(error) {
+                    // If GET fails, try POST (create new)
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: API_ENDPOINTS.createUserBsp,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        data: JSON.stringify({ userId: userId, factionId: factionId, bsp: bsp }),
+                        onload: function(response) {
+                            if (response.status === 201 || response.status === 200) {
+                                resolve(JSON.parse(response.responseText));
+                            } else {
+                                try {
+                                    const error = JSON.parse(response.responseText);
+                                    reject(new Error(error.message || 'Failed to save BSP'));
+                                } catch (e) {
+                                    reject(new Error('Failed to save BSP'));
+                                }
+                            }
+                        },
+                        onerror: function(error) {
+                            reject(new Error('Network error saving BSP'));
+                        }
+                    });
+                }
+            });
+        });
+    }
+
+    // Fetch BSP for a single user
+    async function fetchBSPFromAPI(userId) {
+        const token = await ensureAuthenticated();
+
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: API_ENDPOINTS.getUserBsp(userId),
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                onload: function(response) {
+                    if (response.status === 200) {
+                        try {
+                            const data = JSON.parse(response.responseText);
+                            resolve(data.bsp || '');
+                        } catch (e) {
+                            resolve('');
+                        }
+                    } else if (response.status === 404) {
+                        resolve(''); // No BSP found, return empty string
+                    } else if (response.status === 401) {
+                        // Token expired, re-authenticate and retry
+                        ensureAuthenticated().then(newToken => {
+                            fetchBSPFromAPI(userId).then(resolve).catch(reject);
+                        }).catch(reject);
+                    } else {
+                        resolve(''); // On error, return empty string
+                    }
+                },
+                onerror: function(error) {
+                    resolve(''); // On network error, return empty string
+                }
+            });
+        });
+    }
+
+    // Batch fetch BSP for all members by factionId (single API call)
+    async function fetchAllBSPFromAPI(members, factionId) {
+        if (!members || members.length === 0) return members;
+        if (!factionId) {
+            console.warn('No factionId provided, skipping BSP fetch');
+            return members;
+        }
+
+        showNotification('Loading BSP values from database...', 'info');
+
+        const token = await ensureAuthenticated();
+        const updatedMembers = [...members];
+
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: API_ENDPOINTS.getBspByFaction(factionId),
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                onload: function(response) {
+                    if (response.status === 200) {
+                        try {
+                            const bspData = JSON.parse(response.responseText);
+                            // Create a map of userId -> bsp for quick lookup
+                            const bspMap = new Map();
+                            bspData.forEach(item => {
+                                bspMap.set(item.userId, item.bsp);
+                            });
+
+                            // Update members with BSP values
+                            let updatedCount = 0;
+                            updatedMembers.forEach(member => {
+                                const bsp = bspMap.get(member.id);
+                                if (bsp) {
+                                    member.bsp = bsp;
+                                    updatedCount++;
+                                }
+                            });
+
+                            // Update localStorage with BSP values
+                            localStorage.setItem('tornWarPanelMembers', JSON.stringify(updatedMembers));
+
+                            if (updatedCount > 0) {
+                                showNotification(`Loaded ${updatedCount} BSP values from database`);
+                            }
+
+                            resolve(updatedMembers);
+                        } catch (error) {
+                            console.error('Error parsing BSP response:', error);
+                            resolve(updatedMembers); // Return members without BSP on error
+                        }
+                    } else if (response.status === 401) {
+                        // Token expired, re-authenticate and retry
+                        ensureAuthenticated().then(newToken => {
+                            fetchAllBSPFromAPI(members, factionId).then(resolve).catch(reject);
+                        }).catch(reject);
+                    } else {
+                        console.error(`Error fetching BSP for faction ${factionId}, status: ${response.status}`);
+                        resolve(updatedMembers); // Return members without BSP on error
+                    }
+                },
+                onerror: function(error) {
+                    console.error('Network error fetching BSP:', error);
+                    resolve(updatedMembers); // Return members without BSP on error
+                }
+            });
+        });
+    }
+
     // Add these functions after the styles and before getHtmlTemplate
     function saveApiKey(apiKey) {
         const expirationDate = new Date();
         expirationDate.setDate(expirationDate.getDate() + 100);
-        
+
         const apiKeyData = {
             key: apiKey,
             expiresAt: expirationDate.getTime()
         };
-        
+
         localStorage.setItem('tornWarPanelApiKey', JSON.stringify(apiKeyData));
     }
 
     function getApiKey() {
         const apiKeyData = localStorage.getItem('tornWarPanelApiKey');
         if (!apiKeyData) return null;
-        
+
         const data = JSON.parse(apiKeyData);
         const now = new Date().getTime();
-        
+
         if (now > data.expiresAt) {
             localStorage.removeItem('tornWarPanelApiKey');
             return null;
         }
-        
+
         return data.key;
     }
 
@@ -484,7 +771,7 @@
             <div id="war-panel-toggle"></div>
             <div id="war-panel">
                 <div class="panel-header">War Panel</div>
-                
+
                 <div class="api-key-section">
                     <span>API Key</span>
                     <input type="text" id="api-key-input" placeholder="Enter API Key">
@@ -655,10 +942,10 @@
     function updateMembersTable(members) {
         try {
             console.log('Updating members table with', members.length, 'members');
-            
+
             // Clean up existing countdowns before updating
             cleanupCountdowns();
-            
+
             // Validate members array
             if (!Array.isArray(members)) {
                 throw new Error('Invalid members data: expected an array');
@@ -670,7 +957,7 @@
 
             // Calculate member status counts
             const statusCounts = calculateMemberStatusCounts(validMembers);
-            
+
             // Update status counts in the UI
             $('.zoo-status').html(`
                 <span>Online: ${statusCounts.online}</span>
@@ -711,9 +998,9 @@
             try {
                 const memberStatus = member.status || {};
                 const statusIcon = getStatusIcon(member.lastAction || {});
-                
+
                 const countdownId = `countdown-${member.id || `unknown-${index}`}`;
-                
+
                 const row = `
                     <tr>
                         <td class="action-cell">
@@ -747,7 +1034,7 @@
         $('.xpt-table').each(function() {
             const table = $(this);
             const tabName = table.closest('.tab-content').attr('id').replace('-tab', '');
-            
+
             if (!table.data('handlers-set')) {
                 const headers = table.find('th');
                 headers.each((index, header) => {
@@ -781,22 +1068,29 @@
             $(this).toggleClass('active');
         });
 
-        $('#save-api-key').on('click', function() {
+        $('#save-api-key').on('click', async function() {
             const apiKey = $('#api-key-input').val().trim();
             if (!apiKey) {
                 showNotification('Please enter a valid API key', 'error');
                 return;
             }
-            
+
             saveApiKey(apiKey);
-            showNotification('API key saved successfully!');
-            
+
+            // Authenticate with API
+            try {
+                await authenticate(apiKey);
+                showNotification('API key saved and authenticated successfully!');
+            } catch (error) {
+                showNotification(`Authentication failed: ${error.message}`, 'error');
+            }
+
             // Fetch and save war data
             loadWarData(apiKey);
         });
 
         $('#refresh-members').on('click', refreshMembersData);
-        
+
         $('#auto-refresh').on('click', function() {
             const button = $(this);
             const interval = $('#refresh-interval').val();
@@ -825,7 +1119,7 @@
 
         // Abroad tab refresh button
         $('#refresh-abroad').on('click', refreshMembersData);
-        
+
         // Abroad tab auto-refresh
         $('#auto-refresh-abroad').on('click', function() {
             const button = $(this);
@@ -994,17 +1288,17 @@
     function showNotification(message, type = 'success') {
         // Remove any existing notifications
         $('.notification').remove();
-        
+
         // Create new notification
         const notification = $(`<div class="notification ${type}">${message}</div>`);
         $('body').append(notification);
-        
+
         // Trigger reflow to ensure animation works
         notification[0].offsetHeight;
-        
+
         // Show notification
         notification.addClass('show');
-        
+
         // Hide and remove after delay
         setTimeout(() => {
             notification.removeClass('show');
@@ -1064,12 +1358,12 @@
     // Add this function to handle loading war data
     function loadWarData(apiKey) {
         showNotification('Loading war data...', 'info');
-        
+
         fetchRankedWarData(apiKey)
             .then(data => {
                 const warInfo = saveRankedWarData(data);
                 showNotification(`Loaded war data for ${warInfo.enemyFactionName}`);
-                
+
                 // Update UI with enemy faction name and link
                 $('.faction-name').html(`
                     <a href="https://www.torn.com/factions.php?step=profile&ID=${warInfo.enemyFactionId}" target="_blank">
@@ -1080,8 +1374,8 @@
                 // Fetch and save members data
                 return fetchFactionMembers(apiKey, warInfo.enemyFactionId);
             })
-            .then(membersData => {
-                const processedMembers = saveFactionMembers(membersData);
+            .then(async membersData => {
+                const processedMembers = await saveFactionMembers(membersData);
                 showNotification(`Loaded ${processedMembers.length} members`);
             })
             .catch(error => {
@@ -1128,9 +1422,9 @@
         });
     }
 
-    function saveFactionMembers(membersData) {
+    async function saveFactionMembers(membersData) {
         console.log('Starting saveFactionMembers with data:', membersData);
-        
+
         if (!membersData || !membersData.members || !Array.isArray(membersData.members)) {
             console.error('Invalid members data received:', membersData);
             throw new Error('Invalid members data received from API');
@@ -1186,13 +1480,42 @@
                     processedMember.activity_streak = existingMember.activity_streak;
                 }
             }
-            
+
             console.log('Processed member:', processedMember);
             return processedMember;
         }).filter(member => member !== null);
 
         // Save to localStorage first to ensure we have the base data
         localStorage.setItem('tornWarPanelMembers', JSON.stringify(processedMembers));
+
+        // Update the table immediately with members (before BSP is loaded)
+        updateMembersTable(processedMembers);
+
+        // Get factionId from saved war info
+        const savedWarInfo = localStorage.getItem('tornWarPanelCurrentWar');
+        let factionId = null;
+        if (savedWarInfo) {
+            try {
+                const warInfo = JSON.parse(savedWarInfo);
+                factionId = warInfo.enemyFactionId;
+            } catch (e) {
+                console.error('Error parsing war info:', e);
+            }
+        }
+
+        // Fetch BSP values from API for all members
+        if (factionId) {
+            try {
+                const membersWithBSP = await fetchAllBSPFromAPI(processedMembers, factionId);
+                // Update localStorage with BSP values
+                localStorage.setItem('tornWarPanelMembers', JSON.stringify(membersWithBSP));
+                // Update the table again with BSP values
+                updateMembersTable(membersWithBSP);
+            } catch (error) {
+                console.error('Error fetching BSP from API:', error);
+                // Even if BSP fetch fails, we still have the members displayed
+            }
+        }
 
         // Now fetch Yata BS values only for members who don't have them
         const apiKey = getApiKey();
@@ -1204,10 +1527,12 @@
                         member.yataBS = bsValue;
                         // Update localStorage with the new BS value
                         const currentMembers = JSON.parse(localStorage.getItem('tornWarPanelMembers') || '[]');
-                        const updatedMembers = currentMembers.map(m => 
+                        const updatedMembers = currentMembers.map(m =>
                             m.id === member.id ? {...m, yataBS: bsValue} : m
                         );
                         localStorage.setItem('tornWarPanelMembers', JSON.stringify(updatedMembers));
+                        // Update table with new BS value
+                        updateMembersTable(updatedMembers);
                     }
                 }
             });
@@ -1220,10 +1545,10 @@
     function getStatusIcon(lastAction) {
         try {
             if (!lastAction) return '⚪';
-            
+
             // Safely access status property
             const status = lastAction.status ? String(lastAction.status).toLowerCase() : '';
-            
+
             if (status.includes('online')) {
                 return '🟢';
             } else if (status.includes('idle')) {
@@ -1240,16 +1565,16 @@
     // Add these helper functions for time formatting and life bar
     function formatTimeRemaining(timestamp) {
         if (!timestamp) return '-';
-        
+
         const now = Math.floor(Date.now() / 1000);
         const remaining = timestamp - now;
-        
+
         if (remaining <= 0) return '0s';
-        
+
         const hours = Math.floor(remaining / 3600);
         const minutes = Math.floor((remaining % 3600) / 60);
         const seconds = remaining % 60;
-        
+
         if (hours > 0) {
             return `${hours}h ${minutes}m`;
         } else if (minutes > 0) {
@@ -1261,11 +1586,11 @@
 
     function createLifeBar(current, maximum) {
         if (!maximum) return '0/0';
-        
+
         const percentage = Math.round((current / maximum) * 100);
         const barWidth = 100; // pixels
         const filledWidth = Math.round((percentage / 100) * barWidth);
-        
+
         return `
             <div class="life-bar-container" style="width: ${barWidth}px; display: inline-block;">
                 <div class="life-bar-fill" style="width: ${filledWidth}px; height: 8px; background-color: ${getLifeBarColor(percentage)}; display: inline-block; vertical-align: middle;"></div>
@@ -1301,17 +1626,17 @@
     // Add helper function to parse BSP values
     function parseBSPValue(bsp) {
         if (!bsp || bsp === '-') return 0;
-        
+
         // Remove any whitespace and convert to lowercase
         bsp = bsp.trim().toLowerCase();
-        
+
         // Extract the numeric part
         const match = bsp.match(/^([\d.]+)([kmb])?$/);
         if (!match) return 0;
-        
+
         let value = parseFloat(match[1]);
         const suffix = match[2];
-        
+
         // Apply multiplier based on suffix
         switch(suffix) {
             case 'k':
@@ -1324,7 +1649,7 @@
                 value *= 1000000000;
                 break;
         }
-        
+
         return value;
     }
 
@@ -1332,7 +1657,7 @@
     function sortTable(columnIndex, table) {
         try {
             console.log('Starting sort operation on column:', columnIndex);
-            
+
             const savedMembers = localStorage.getItem('tornWarPanelMembers');
             if (!savedMembers) {
                 console.error('No members found in localStorage');
@@ -1344,22 +1669,22 @@
 
             // Determine which tab we're sorting
             const tabName = $(table).closest('.tab-content').attr('id').replace('-tab', '');
-            
+
             // Get current sort state
             const currentHeader = $(table).find('th').eq(columnIndex);
             const isAscending = currentHeader.hasClass('sort-asc');
-            
+
             // Update sort indicators
             $(table).find('th').removeClass('sort-asc sort-desc');
             currentHeader.addClass(isAscending ? 'sort-desc' : 'sort-asc');
-            
+
             // Save sort state
             saveSortState(columnIndex, !isAscending, tabName);
-            
+
             // Sort members array based on column
             members.sort((a, b) => {
                 let aValue, bValue;
-                
+
                 switch(columnIndex) {
                     case 0: // Action column (status icon)
                         aValue = getStatusPriority(getStatusIcon(a?.lastAction || {}));
@@ -1392,21 +1717,21 @@
                     default:
                         return 0;
                 }
-                
+
                 if (typeof aValue === 'string' && typeof bValue === 'string') {
-                    return isAscending ? 
-                        bValue.localeCompare(aValue) : 
+                    return isAscending ?
+                        bValue.localeCompare(aValue) :
                         aValue.localeCompare(bValue);
                 }
-                
-                return isAscending ? 
-                    (bValue - aValue) : 
+
+                return isAscending ?
+                    (bValue - aValue) :
                     (aValue - bValue);
             });
-            
+
             console.log('Total members after sorting:', members.length);
             updateMembersTable(members);
-            
+
         } catch (error) {
             console.error('Error in sortTable:', error);
             showNotification('Error sorting members', 'error');
@@ -1491,7 +1816,7 @@
     function refreshMembersData() {
         const table = $('.xpt-table');
         table.addClass('table-loading');
-        
+
         const apiKey = getApiKey();
         if (!apiKey) {
             showNotification('Please enter a valid API key', 'error');
@@ -1507,20 +1832,20 @@
         }
 
         const warInfo = JSON.parse(savedWarInfo);
-        
+
         // Make the API request
         fetchFactionMembers(apiKey, warInfo.enemyFactionId)
-            .then(membersData => {
+            .then(async membersData => {
                 // Save the new data (which will handle Yata BS values appropriately)
-                const processedMembers = saveFactionMembers(membersData);
-                
+                const processedMembers = await saveFactionMembers(membersData);
+
                 // Get current sort state
                 const sortState = getSortState();
-                
+
                 // Sort the members according to saved state
                 const sortedMembers = [...processedMembers].sort((a, b) => {
                     let aValue, bValue;
-                    
+
                     switch(sortState.column) {
                         case 0: // Action column (status icon)
                             aValue = getStatusPriority(getStatusIcon(a?.lastAction || {}));
@@ -1553,18 +1878,18 @@
                         default:
                             return 0;
                     }
-                    
+
                     if (typeof aValue === 'string' && typeof bValue === 'string') {
-                        return sortState.ascending ? 
-                            aValue.localeCompare(bValue) : 
+                        return sortState.ascending ?
+                            aValue.localeCompare(bValue) :
                             bValue.localeCompare(aValue);
                     }
-                    
-                    return sortState.ascending ? 
-                        (aValue - bValue) : 
+
+                    return sortState.ascending ?
+                        (aValue - bValue) :
                         (bValue - aValue);
                 });
-                
+
                 // Update both tables with the sorted data
                 updateMembersTable(sortedMembers);
                 showNotification('Members data refreshed');
@@ -1582,11 +1907,11 @@
     function getStatusClass(state) {
         try {
             if (!state) return 'status-okay';
-            
+
             // Ensure state is a string and handle any potential errors
             const stateStr = String(state || '');
             const stateLower = stateStr.toLowerCase();
-            
+
             switch (stateLower) {
                 case 'okay':
                     return 'status-okay';
@@ -1666,12 +1991,12 @@
     // Add function to format BS values
     function formatBSValue(value) {
         if (!value || value === '-') return '-';
-        
+
         const num = parseInt(value);
         if (isNaN(num)) return '-';
 
         const absNum = Math.abs(num);
-        
+
         if (absNum >= 1e12) {
             return (num / 1e12).toFixed(1) + 'T';
         } else if (absNum >= 1e9) {
@@ -1681,12 +2006,12 @@
         } else if (absNum >= 1e3) {
             return (num / 1e3).toFixed(1) + 'K';
         }
-        
+
         return num.toString();
     }
 
-    // Add function to scrape BSP values
-    function scrapeBSPValues() {
+    // Add function to scrape BSP values and save to API
+    async function scrapeBSPValues() {
         try {
             console.log('Starting BSP scraping');
             const savedMembers = localStorage.getItem('tornWarPanelMembers');
@@ -1697,46 +2022,80 @@
 
             const members = JSON.parse(savedMembers);
             let updatedCount = 0;
+            let savedToAPICount = 0;
 
-            // Find all attack links in the page
-            const attackLinks = document.querySelectorAll('a[href*="loader2.php?sid=getInAttack"]');
-            
-            attackLinks.forEach(link => {
+            // Get factionId from saved war info
+            const savedWarInfo = localStorage.getItem('tornWarPanelCurrentWar');
+            let factionId = null;
+            if (savedWarInfo) {
                 try {
+                    const warInfo = JSON.parse(savedWarInfo);
+                    factionId = warInfo.enemyFactionId;
+                } catch (e) {
+                    console.error('Error parsing war info:', e);
+                }
+            }
+
+            // Find all BSP containers with the new HTML structure
+            // Look for divs with class TDup_ColoredStatsInjectionDiv or links with loader.php?sid=attack
+            const bspContainers = document.querySelectorAll('div.TDup_ColoredStatsInjectionDiv, a[href*="loader.php?sid=attack"]');
+
+            showPersistentNotification('Scraping BSP values and saving to database...');
+
+            for (const container of bspContainers) {
+                try {
+                    // Find the link element (could be the container itself or inside it)
+                    const link = container.tagName === 'A' ? container : container.querySelector('a[href*="loader.php?sid=attack"]');
+                    if (!link) continue;
+
                     // Extract user ID from the link
                     const userIdMatch = link.href.match(/user2ID=(\d+)/);
-                    if (!userIdMatch) return;
-                    
+                    if (!userIdMatch) continue;
+
                     const userId = parseInt(userIdMatch[1]);
-                    
-                    // Find the iconStats div within this link
-                    const iconStats = link.querySelector('.iconStats');
-                    if (!iconStats) return;
-                    
+
+                    // Find the iconStats div within the container (could be nested)
+                    const iconStats = container.querySelector('.iconStats');
+                    if (!iconStats) continue;
+
                     // Extract BSP value
                     const bspValue = iconStats.textContent.trim();
-                    
+                    if (!bspValue) continue;
+
                     // Update member in the array
                     const memberIndex = members.findIndex(m => m.id === userId);
                     if (memberIndex !== -1) {
                         members[memberIndex].bsp = bspValue;
                         updatedCount++;
+
+                        // Save to API
+                        try {
+                            await saveBSPToAPI(userId, factionId, bspValue);
+                            savedToAPICount++;
+                        } catch (apiError) {
+                            console.error(`Error saving BSP to API for user ${userId}:`, apiError);
+                        }
+
+                        // Small delay to avoid overwhelming the API
+                        await sleep(200);
                     }
                 } catch (linkError) {
-                    console.error('Error processing link:', linkError);
+                    console.error('Error processing container:', linkError);
                 }
-            });
+            }
 
-            // Save updated members
+            // Save updated members to localStorage (for display)
             localStorage.setItem('tornWarPanelMembers', JSON.stringify(members));
-            
+
             // Update the table
             updateMembersTable(members);
-            
-            showNotification(`Updated BSP values for ${updatedCount} members`);
+
+            removePersistentNotification();
+            showNotification(`Updated ${updatedCount} BSP values (${savedToAPICount} saved to database)`);
         } catch (error) {
             console.error('Error scraping BSP values:', error);
             showNotification('Error scraping BSP values', 'error');
+            removePersistentNotification();
         }
     }
 
@@ -1854,27 +2213,53 @@
     }
 
     // Initialize the panel
-    function init() {
+    async function init() {
         addStyles();
         createPanel();
         loadSavedFactionInfo();
-        loadSavedMembers();
+        await loadSavedMembers();
     }
 
     // Add this function to load saved members
-    function loadSavedMembers() {
+    async function loadSavedMembers() {
         try {
             console.log('Starting loadSavedMembers');
             const savedMembers = localStorage.getItem('tornWarPanelMembers');
-            
+
             if (!savedMembers) {
                 console.log('No saved members found');
                 return;
             }
 
             const members = JSON.parse(savedMembers);
+
+            // Update the table immediately with saved members (before BSP is loaded)
             updateMembersTable(members);
-            
+
+            // Get factionId from saved war info
+            const savedWarInfo = localStorage.getItem('tornWarPanelCurrentWar');
+            let factionId = null;
+            if (savedWarInfo) {
+                try {
+                    const warInfo = JSON.parse(savedWarInfo);
+                    factionId = warInfo.enemyFactionId;
+                } catch (e) {
+                    console.error('Error parsing war info:', e);
+                }
+            }
+
+            // Fetch BSP from API for all members
+            if (factionId) {
+                try {
+                    const membersWithBSP = await fetchAllBSPFromAPI(members, factionId);
+                    // Update the table again with BSP values
+                    updateMembersTable(membersWithBSP);
+                } catch (error) {
+                    console.error('Error fetching BSP from API in loadSavedMembers:', error);
+                    // Even if BSP fetch fails, members are already displayed
+                }
+            }
+
         } catch (error) {
             console.error('Error in loadSavedMembers:', error);
             showNotification('Error loading members data', 'error');
